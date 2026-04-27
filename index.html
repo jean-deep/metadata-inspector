@@ -1,266 +1,603 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic App Hub</title>
+    <title>Visor de Metadatos AI (Local)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f8fafc;
+        /* Estilos personalizados para el canvas/svg interactivo */
+        #graph-container {
+            cursor: grab;
+            overflow: hidden;
+            background-color: #1e1e1e;
+            background-image: radial-gradient(#333 1px, transparent 1px);
+            background-size: 20px 20px;
         }
-
-        .glass-card {
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(226, 232, 240, 0.8);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .glass-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.1);
-            border-color: #3b82f6;
-        }
-
-        @keyframes pulse-soft {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.5;
-            }
-        }
-
-        .scanning {
-            animation: pulse-soft 2s infinite;
-        }
+        #graph-container:active { cursor: grabbing; }
+        
+        .node-rect { fill: #2b2b2b; stroke: #555; stroke-width: 2; rx: 8; ry: 8; }
+        .node-header { fill: #3b3b3b; }
+        .node-text-title { fill: #e0e0e0; font-size: 14px; font-family: sans-serif; font-weight: bold; pointer-events: none; }
+        .node-text { fill: #aaaaaa; font-size: 12px; font-family: sans-serif; pointer-events: none; }
+        .link-path { fill: none; stroke: #6b7280; stroke-width: 3; opacity: 0.7; }
+        .link-path:hover { stroke: #3b82f6; stroke-width: 5; opacity: 1; }
+        
+        /* Ocultar barra de desplazamiento en el JSON */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
+<body class="bg-gray-900 text-gray-200 h-screen flex flex-col font-sans overflow-hidden">
 
-<body class="min-h-screen text-slate-900">
-
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <div class="flex items-center gap-2">
-                <div class="bg-blue-600 p-1.5 rounded-lg">
-                    <i data-lucide="cpu" class="w-6 h-6 text-white"></i>
-                </div>
-                <h1 class="text-xl font-bold tracking-tight text-slate-800">Auto<span
-                        class="text-blue-600">Scanner</span></h1>
-            </div>
-
-            <div class="flex items-center gap-4">
-                <div id="scanStatus" class="hidden items-center gap-2 text-sm font-medium text-blue-600 scanning">
-                    <i data-lucide="refresh-cw" class="w-4 h-4"></i> Scanning...
-                </div>
-                <div class="relative hidden md:block">
-                    <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                    <input type="text" id="searchInput" placeholder="Filter discovered apps..."
-                        class="pl-10 pr-4 py-2 bg-slate-100 border-transparent focus:bg-white focus:ring-2 focus:ring-blue-500 rounded-full text-sm w-64 transition-all outline-none">
-                </div>
-                <button onclick="startDiscovery()"
-                    class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors flex items-center gap-2">
-                    <i data-lucide="search" class="w-4 h-4"></i> Rescan
-                </button>
-            </div>
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-md shrink-0">
+        <div class="flex items-center gap-3">
+            <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <h1 class="text-xl font-bold text-white">Lector Local de Metadatos IA</h1>
         </div>
+        <span class="text-xs bg-green-900 text-green-300 px-2 py-1 rounded border border-green-700">100% Local / Privado</span>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div class="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
-            <div>
-                <h2 class="text-3xl font-bold text-slate-900 mb-2">Network Discovery</h2>
-                <p class="text-slate-500">Automatically detecting local services, VPS ports, and GitHub Pages.</p>
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Sidebar: Image & Dropzone -->
+        <aside class="w-1/3 min-w-[300px] bg-gray-800 border-r border-gray-700 p-4 flex flex-col gap-4 overflow-y-auto">
+            <div id="dropzone" class="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-gray-700 transition-all flex flex-col items-center justify-center min-h-[200px]">
+                <svg class="w-12 h-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                <p class="text-sm text-gray-300 mb-1">Arrastra una imagen PNG aquí</p>
+                <p class="text-xs text-gray-500">o haz clic para seleccionar</p>
+                <input type="file" id="file-input" class="hidden" accept="image/png, image/webp, image/jpeg">
             </div>
-            <div class="flex gap-2">
-                <input type="text" id="githubUser" placeholder="GitHub Username"
-                    class="px-4 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                <input type="text" id="vpsIp" placeholder="VPS IP (Optional)"
-                    class="px-4 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
-        </div>
 
-        <div id="appGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- Discovered apps will appear here -->
-        </div>
-
-        <div id="emptyState" class="flex flex-col items-center justify-center py-20 text-center">
-            <div class="bg-slate-100 p-6 rounded-full mb-4">
-                <i data-lucide="radar" class="w-12 h-12 text-slate-400"></i>
+            <div id="image-preview-container" class="hidden flex-col gap-2">
+                <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Vista Previa</h3>
+                <img id="image-preview" class="w-full rounded-lg shadow-lg border border-gray-700 object-contain max-h-[300px]" src="" alt="Preview">
+                <div id="file-info" class="text-xs text-gray-400 break-all mt-2 bg-gray-900 p-2 rounded"></div>
             </div>
-            <h3 class="text-lg font-semibold text-slate-900">Ready to Scan</h3>
-            <p class="text-slate-500">Enter your info above and hit scan to discover your projects.</p>
-        </div>
+        </aside>
+
+        <!-- Main Panel: Metadata Tabs -->
+        <section class="flex-1 flex flex-col bg-gray-900 relative">
+            
+            <!-- Default State -->
+            <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-gray-500 z-10">
+                <svg class="w-16 h-16 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                <p>Carga una imagen generada para ver sus metadatos.</p>
+                <p class="text-sm mt-2">Soporta parámetros de A1111 y flujos de nodos de ComfyUI.</p>
+            </div>
+
+            <!-- Content State (Hidden initially) -->
+            <div id="content-state" class="hidden flex-col h-full z-20 bg-gray-900">
+                <!-- Tabs -->
+                <div class="flex border-b border-gray-700 bg-gray-800 shrink-0">
+                    <button class="tab-btn px-6 py-3 text-sm font-medium text-blue-400 border-b-2 border-blue-500 hover:text-white transition-colors" data-target="tab-resumen">Parámetros / Resumen</button>
+                    <button class="tab-btn px-6 py-3 text-sm font-medium text-gray-400 border-b-2 border-transparent hover:text-white transition-colors" data-target="tab-nodos">Visualizador de Nodos (ComfyUI)</button>
+                    <button class="tab-btn px-6 py-3 text-sm font-medium text-gray-400 border-b-2 border-transparent hover:text-white transition-colors" data-target="tab-json">JSON Puro</button>
+                </div>
+
+                <!-- Tab: Resumen / A1111 -->
+                <div id="tab-resumen" class="tab-content flex-1 p-6 overflow-y-auto">
+                    <div id="no-metadata-msg" class="hidden text-yellow-500 bg-yellow-900/20 p-4 rounded-lg border border-yellow-700/50">
+                        No se encontraron metadatos de texto legibles (tEXt/iTXt) en este archivo PNG.
+                    </div>
+                    
+                    <div id="a1111-container" class="hidden mb-6">
+                        <h2 class="text-lg font-bold text-white mb-3">Parámetros (Stable Diffusion WebUI / A1111)</h2>
+                        <div class="bg-gray-800 border border-gray-700 rounded-lg p-4 font-mono text-sm whitespace-pre-wrap text-green-300" id="a1111-text"></div>
+                    </div>
+
+                    <div id="comfy-summary-container" class="hidden">
+                        <h2 class="text-lg font-bold text-white mb-3">Resumen del Prompt (ComfyUI)</h2>
+                        <div class="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
+                            <table class="min-w-full divide-y divide-gray-700">
+                                <thead class="bg-gray-900">
+                                    <tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Nodo ID</th><th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Tipo</th><th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase">Valores Principales</th></tr>
+                                </thead>
+                                <tbody id="comfy-summary-body" class="divide-y divide-gray-700">
+                                    <!-- Generado dinamicamente -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Nodos Visuales -->
+                <div id="tab-nodos" class="tab-content hidden flex-1 relative bg-gray-900">
+                    <div id="no-nodos-msg" class="absolute inset-0 flex items-center justify-center text-gray-500">
+                        Esta imagen no contiene información de workflow de ComfyUI.
+                    </div>
+                    <!-- Contenedor interactivo SVG -->
+                    <div id="graph-container" class="absolute inset-0 w-full h-full hidden">
+                        <svg id="node-graph" width="100%" height="100%">
+                            <!-- Se inyectará el graph_group dinámicamente para soportar zoom/pan -->
+                            <g id="graph_group" transform="matrix(1 0 0 1 0 0)"></g>
+                        </svg>
+                        
+                        <!-- Controles de zoom superpuestos -->
+                        <div class="absolute bottom-4 right-4 flex gap-2 bg-gray-800 p-1 rounded-lg border border-gray-700 shadow-xl">
+                            <button id="btn-zoom-out" class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"></path></svg></button>
+                            <button id="btn-zoom-reset" class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded text-xs font-bold w-10">1:1</button>
+                            <button id="btn-zoom-in" class="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: JSON Puro -->
+                <div id="tab-json" class="tab-content hidden flex-1 flex flex-col">
+                    <div class="flex-1 p-4 overflow-hidden flex flex-col gap-4">
+                        <div class="flex-1 flex flex-col">
+                            <h3 class="text-sm font-semibold text-gray-400 mb-2">Prompt JSON</h3>
+                            <textarea id="raw-prompt" class="w-full flex-1 bg-gray-800 border border-gray-700 rounded p-3 text-xs font-mono text-green-400 focus:outline-none resize-none scrollbar-hide" readonly></textarea>
+                        </div>
+                        <div class="flex-1 flex flex-col">
+                            <h3 class="text-sm font-semibold text-gray-400 mb-2">Workflow JSON</h3>
+                            <textarea id="raw-workflow" class="w-full flex-1 bg-gray-800 border border-gray-700 rounded p-3 text-xs font-mono text-purple-400 focus:outline-none resize-none scrollbar-hide" readonly></textarea>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
     </main>
 
     <script>
-        let discoveredApps = [];
-        const COMMON_PORTS = [3000, 5173, 8000, 8080, 4200, 3001, 5000];
+        // --- UI & TAB LOGIC ---
+        const tabs = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
 
-        async function startDiscovery() {
-            const githubUser = document.getElementById('githubUser').value.trim();
-            const vpsIp = document.getElementById('vpsIp').value.trim();
-            const statusIndicator = document.getElementById('scanStatus');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active styling from all tabs
+                tabs.forEach(t => {
+                    t.classList.remove('text-blue-400', 'border-blue-500');
+                    t.classList.add('text-gray-400', 'border-transparent');
+                });
+                // Add active styling to clicked tab
+                tab.classList.remove('text-gray-400', 'border-transparent');
+                tab.classList.add('text-blue-400', 'border-blue-500');
 
-            discoveredApps = [];
-            statusIndicator.classList.remove('hidden');
-            statusIndicator.classList.add('flex');
-
-            document.getElementById('appGrid').innerHTML = '';
-            document.getElementById('emptyState').classList.add('hidden');
-
-            const scanPromises = [];
-
-            // 1. Scan Localhost
-            COMMON_PORTS.forEach(port => {
-                scanPromises.push(checkService(`http://localhost:${port}`, 'Local', 'monitor'));
+                // Hide all contents
+                tabContents.forEach(c => c.classList.add('hidden'));
+                // Show target content
+                const targetId = tab.getAttribute('data-target');
+                document.getElementById(targetId).classList.remove('hidden');
+                document.getElementById(targetId).classList.add('flex'); // Keep flex layout if needed
             });
+        });
 
-            // 2. Scan VPS (if provided)
-            if (vpsIp) {
-                scanPromises.push(checkService(`https://${vpsIp}`, 'VPS', 'server'));
-                COMMON_PORTS.forEach(port => {
-                    scanPromises.push(checkService(`https://${vpsIp}:${port}`, 'VPS', 'server'));
+        // --- FILE HANDLING ---
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('file-input');
+        const emptyState = document.getElementById('empty-state');
+        const contentState = document.getElementById('content-state');
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-blue-500', 'bg-gray-700');
+        });
+        
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('border-blue-500', 'bg-gray-700');
+        });
+        
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-blue-500', 'bg-gray-700');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                processFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        function resetUI() {
+            document.getElementById('a1111-container').classList.add('hidden');
+            document.getElementById('comfy-summary-container').classList.add('hidden');
+            document.getElementById('no-metadata-msg').classList.add('hidden');
+            document.getElementById('graph-container').classList.add('hidden');
+            document.getElementById('no-nodos-msg').classList.remove('hidden');
+            document.getElementById('raw-prompt').value = '';
+            document.getElementById('raw-workflow').value = '';
+            document.getElementById('comfy-summary-body').innerHTML = '';
+            document.getElementById('graph_group').innerHTML = '';
+            
+            // Reset zoom
+            transform = { x: 0, y: 0, scale: 1 };
+            updateTransform();
+        }
+
+        async function processFile(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Por favor, selecciona un archivo de imagen válido.');
+                return;
+            }
+
+            resetUI();
+
+            // Set Preview
+            const imgUrl = URL.createObjectURL(file);
+            document.getElementById('image-preview').src = imgUrl;
+            document.getElementById('image-preview-container').classList.remove('hidden');
+            document.getElementById('file-info').innerText = `${file.name} • ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+
+            // Switch layout state
+            emptyState.classList.add('hidden');
+            contentState.classList.remove('hidden');
+            contentState.classList.add('flex');
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const metadata = extractPNGMetadata(arrayBuffer);
+                displayMetadata(metadata);
+            } catch (error) {
+                console.error("Error leyendo imagen:", error);
+                document.getElementById('no-metadata-msg').classList.remove('hidden');
+                document.getElementById('no-metadata-msg').innerText = "Error procesando el archivo. Asegúrate de que sea un PNG original y no haya sido comprimido o limpiado por una red social.";
+            }
+        }
+
+        // --- PNG METADATA PARSER ---
+        function extractPNGMetadata(buffer) {
+            const dataView = new DataView(buffer);
+            const uint8Array = new Uint8Array(buffer);
+            
+            // Check PNG Signature: 89 50 4e 47 0d 0a 1a 0a
+            if (dataView.getUint32(0) !== 0x89504E47) {
+                throw new Error("No es un archivo PNG válido.");
+            }
+
+            let offset = 8;
+            const metadata = {};
+            const decoder = new TextDecoder('utf-8');
+            const latin1Decoder = new TextDecoder('latin1');
+
+            while (offset < dataView.byteLength) {
+                const length = dataView.getUint32(offset);
+                const type = String.fromCharCode(
+                    dataView.getUint8(offset + 4),
+                    dataView.getUint8(offset + 5),
+                    dataView.getUint8(offset + 6),
+                    dataView.getUint8(offset + 7)
+                );
+                
+                if (type === 'IEND') break;
+
+                if (type === 'tEXt') {
+                    const chunkData = uint8Array.slice(offset + 8, offset + 8 + length);
+                    const nullIndex = chunkData.indexOf(0);
+                    if (nullIndex !== -1) {
+                        const keyword = latin1Decoder.decode(chunkData.slice(0, nullIndex));
+                        const text = decoder.decode(chunkData.slice(nullIndex + 1));
+                        metadata[keyword] = text;
+                    }
+                } else if (type === 'iTXt') {
+                    const chunkData = uint8Array.slice(offset + 8, offset + 8 + length);
+                    let nullIndex1 = chunkData.indexOf(0);
+                    if (nullIndex1 !== -1) {
+                        const keyword = latin1Decoder.decode(chunkData.slice(0, nullIndex1));
+                        // iTXt has more flags (compression, language) before the text data.
+                        // For simplicity in this local scope, we skip 3 more nulls to get to text.
+                        // [keyword, 0, comp_flag, comp_method, lang_tag, 0, trans_keyword, 0, text]
+                        let startText = nullIndex1 + 1 + 2; // skip flag and method
+                        let nullIndex2 = chunkData.indexOf(0, startText); // end of lang
+                        let nullIndex3 = chunkData.indexOf(0, nullIndex2 + 1); // end of trans_keyword
+                        
+                        if (nullIndex3 !== -1) {
+                            const textData = chunkData.slice(nullIndex3 + 1);
+                            // If it's compressed, we'd need zlib/pako to decompress. 
+                            // Fortunately ComfyUI tEXt is usually uncompressed. 
+                            // For this lightweight version we try raw utf-8 decode.
+                            try {
+                                metadata[keyword] = decoder.decode(textData);
+                            } catch(e) {}
+                        }
+                    }
+                }
+                
+                offset += 8 + length + 4; // length(4) + type(4) + data + crc(4)
+            }
+            return metadata;
+        }
+
+        function displayMetadata(metadata) {
+            let hasData = false;
+
+            // 1. Check A1111 (Stable Diffusion WebUI)
+            if (metadata['parameters']) {
+                hasData = true;
+                const a1111Container = document.getElementById('a1111-container');
+                a1111Container.classList.remove('hidden');
+                document.getElementById('a1111-text').innerText = metadata['parameters'];
+            }
+
+            // 2. Check ComfyUI
+            if (metadata['prompt'] || metadata['workflow']) {
+                hasData = true;
+                
+                // Set JSON tab
+                if (metadata['prompt']) {
+                    try {
+                        const promptObj = JSON.parse(metadata['prompt']);
+                        document.getElementById('raw-prompt').value = JSON.stringify(promptObj, null, 2);
+                        buildComfySummary(promptObj);
+                    } catch (e) {
+                        document.getElementById('raw-prompt').value = metadata['prompt'];
+                    }
+                }
+                
+                if (metadata['workflow']) {
+                    try {
+                        const workflowObj = JSON.parse(metadata['workflow']);
+                        document.getElementById('raw-workflow').value = JSON.stringify(workflowObj, null, 2);
+                        
+                        // Render Graph View
+                        if (workflowObj.nodes && workflowObj.links) {
+                            document.getElementById('no-nodos-msg').classList.add('hidden');
+                            document.getElementById('graph-container').classList.remove('hidden');
+                            renderComfyGraph(workflowObj);
+                        }
+                    } catch (e) {
+                        document.getElementById('raw-workflow').value = metadata['workflow'];
+                    }
+                }
+            }
+
+            if (!hasData) {
+                document.getElementById('no-metadata-msg').classList.remove('hidden');
+            }
+        }
+
+        // Build a simplified table for ComfyUI Prompt data
+        function buildComfySummary(promptObj) {
+            const container = document.getElementById('comfy-summary-container');
+            const tbody = document.getElementById('comfy-summary-body');
+            container.classList.remove('hidden');
+            
+            for (const [nodeId, nodeData] of Object.entries(promptObj)) {
+                const tr = document.createElement('tr');
+                
+                // ID
+                const tdId = document.createElement('td');
+                tdId.className = "px-4 py-3 whitespace-nowrap text-sm text-gray-400 font-mono";
+                tdId.innerText = nodeId;
+                
+                // Type
+                const tdType = document.createElement('td');
+                tdType.className = "px-4 py-3 whitespace-nowrap text-sm text-blue-400 font-semibold";
+                tdType.innerText = nodeData.class_type || 'Unknown';
+                
+                // Values (Inputs ignoring structural links)
+                const tdValues = document.createElement('td');
+                tdValues.className = "px-4 py-3 text-sm text-gray-300";
+                
+                let valuesHtml = '';
+                if (nodeData.inputs) {
+                    for (const [k, v] of Object.entries(nodeData.inputs)) {
+                        if (typeof v !== 'object') { // Solo primitivos, no links a otros nodos
+                            let textVal = String(v);
+                            if (textVal.length > 50) textVal = textVal.substring(0, 50) + '...';
+                            valuesHtml += `<div class="mb-1"><span class="text-gray-500">${k}:</span> <span class="text-green-300">${textVal}</span></div>`;
+                        }
+                    }
+                }
+                tdValues.innerHTML = valuesHtml || '<span class="text-gray-600 italic">Sin valores directos</span>';
+                
+                tr.appendChild(tdId);
+                tr.appendChild(tdType);
+                tr.appendChild(tdValues);
+                tbody.appendChild(tr);
+            }
+        }
+
+        // --- SVG GRAPH RENDERER FOR COMFYUI ---
+        function renderComfyGraph(workflow) {
+            const group = document.getElementById('graph_group');
+            group.innerHTML = ''; // Clear previous
+
+            const nodesMap = {};
+            
+            // Draw Links first so they appear behind nodes
+            const linksGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            group.appendChild(linksGroup);
+
+            const nodesGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            group.appendChild(nodesGroup);
+
+            // Process nodes map
+            if (workflow.nodes) {
+                workflow.nodes.forEach(node => {
+                    nodesMap[node.id] = node;
                 });
             }
 
-            // 3. Scan GitHub Pages
-            if (githubUser) {
-                scanPromises.push(fetchGithubPages(githubUser));
-            }
+            // Draw Links
+            if (workflow.links) {
+                workflow.links.forEach(link => {
+                    if (!link) return;
+                    const [link_id, source_id, source_slot, target_id, target_slot, type] = link;
+                    const sourceNode = nodesMap[source_id];
+                    const targetNode = nodesMap[target_id];
 
-            await Promise.all(scanPromises);
+                    if (sourceNode && targetNode) {
+                        // Calculate rough connection points based on standard ComfyUI layout
+                        // Origin usually right side. Target usually left side.
+                        const startX = sourceNode.pos[0] + (sourceNode.size ? sourceNode.size[0] : 200);
+                        const startY = sourceNode.pos[1] + 40 + (source_slot * 20); // offset header and slots
+                        
+                        const endX = targetNode.pos[0];
+                        const endY = targetNode.pos[1] + 40 + (target_slot * 20);
 
-            statusIndicator.classList.add('hidden');
-            statusIndicator.classList.remove('flex');
-
-            if (discoveredApps.length === 0) {
-                document.getElementById('emptyState').classList.remove('hidden');
-            }
-
-            renderApps();
-        }
-
-        async function checkService(url, category, icon) {
-            try {
-                // Using 'no-cors' mode allows us to detect if a server is there 
-                // even if it doesn't allow cross-origin requests. 
-                // Note: fetch will still "fail" in some browsers but we can use timing or 
-                // small resource probes. For local apps, often a simple fetch works.
-                const controller = new AbortController();
-                const id = setTimeout(() => controller.abort(), 1500);
-
-                await fetch(url, { mode: 'no-cors', signal: controller.signal });
-                clearTimeout(id);
-
-                addApp({
-                    title: `${category} Service :${url.split(':').pop()}`,
-                    description: `Active service detected at ${url}`,
-                    url: url,
-                    category: category,
-                    icon: icon,
-                    color: category === 'Local' ? 'text-emerald-600' : 'text-blue-600',
-                    bgColor: category === 'Local' ? 'bg-emerald-100' : 'bg-blue-100'
-                });
-            } catch (e) {
-                // Service likely not running
-            }
-        }
-
-        async function fetchGithubPages(username) {
-            try {
-                const response = await fetch(`https://api.github.com/users/${username}/repos?per_page=100`);
-                const repos = await response.json();
-
-                repos.forEach(repo => {
-                    if (repo.has_pages) {
-                        addApp({
-                            title: repo.name.replace(/-/g, ' '),
-                            description: repo.description || "No description provided.",
-                            url: `https://${username}.github.io/${repo.name}`,
-                            category: 'Github Pages',
-                            icon: 'github',
-                            color: 'text-slate-700',
-                            bgColor: 'bg-slate-200'
-                        });
+                        // Draw Bezier curve
+                        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                        path.setAttribute("class", "link-path");
+                        const cpOffset = Math.abs(endX - startX) * 0.5; // Control point offset
+                        path.setAttribute("d", `M ${startX} ${startY} C ${startX + cpOffset} ${startY}, ${endX - cpOffset} ${endY}, ${endX} ${endY}`);
+                        linksGroup.appendChild(path);
                     }
                 });
-            } catch (e) {
-                console.error("GitHub API Error", e);
+            }
+
+            // Draw Nodes
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+            if (workflow.nodes) {
+                workflow.nodes.forEach(node => {
+                    const x = node.pos[0];
+                    const y = node.pos[1];
+                    const w = node.size ? node.size[0] : 210;
+                    const h = node.size ? Math.max(node.size[1], 80) : 100;
+
+                    // Bounds for auto-centering
+                    if (x < minX) minX = x;
+                    if (y < minY) minY = y;
+                    if (x + w > maxX) maxX = x + w;
+                    if (y + h > maxY) maxY = y + h;
+
+                    const nodeG = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                    nodeG.setAttribute("transform", `translate(${x}, ${y})`);
+
+                    // Node body
+                    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    rect.setAttribute("width", w);
+                    rect.setAttribute("height", h);
+                    rect.setAttribute("class", "node-rect");
+                    nodeG.appendChild(rect);
+
+                    // Node Header (Color based on type or fallback)
+                    const headerRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    headerRect.setAttribute("width", w);
+                    headerRect.setAttribute("height", 30);
+                    headerRect.setAttribute("class", "node-header");
+                    headerRect.setAttribute("rx", 8);
+                    headerRect.setAttribute("ry", 8);
+                    // Hack to make bottom corners square for header
+                    const headerClip = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    headerClip.setAttribute("d", `M 0 8 Q 0 0 8 0 L ${w-8} 0 Q ${w} 0 ${w} 8 L ${w} 30 L 0 30 Z`);
+                    headerClip.setAttribute("class", "node-header");
+                    nodeG.appendChild(headerClip);
+
+                    // Node Title
+                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    text.setAttribute("x", 10);
+                    text.setAttribute("y", 20);
+                    text.setAttribute("class", "node-text-title");
+                    text.textContent = node.title || node.type;
+                    nodeG.appendChild(text);
+
+                    // Node ID
+                    const textId = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    textId.setAttribute("x", w - 10);
+                    textId.setAttribute("y", 20);
+                    textId.setAttribute("class", "node-text");
+                    textId.setAttribute("text-anchor", "end");
+                    textId.textContent = `#${node.id}`;
+                    nodeG.appendChild(textId);
+
+                    // Some visual fluff for properties inside node
+                    const innerText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    innerText.setAttribute("x", 10);
+                    innerText.setAttribute("y", 50);
+                    innerText.setAttribute("class", "node-text");
+                    innerText.textContent = (node.widgets_values || node.inputs) ? "Configurado" : "Defecto";
+                    nodeG.appendChild(innerText);
+
+                    nodesGroup.appendChild(nodeG);
+                });
+            }
+
+            // Auto-center camera
+            if (minX !== Infinity) {
+                const padding = 100;
+                const container = document.getElementById('graph-container');
+                const cw = container.clientWidth;
+                const ch = container.clientHeight;
+                
+                const graphW = maxX - minX;
+                const graphH = maxY - minY;
+                
+                // Calculate scale to fit
+                const scaleX = cw / (graphW + padding * 2);
+                const scaleY = ch / (graphH + padding * 2);
+                const initScale = Math.min(scaleX, scaleY, 1); // Max zoom 1
+
+                const cx = minX + graphW / 2;
+                const cy = minY + graphH / 2;
+
+                transform.scale = initScale;
+                transform.x = (cw / 2) - (cx * initScale);
+                transform.y = (ch / 2) - (cy * initScale);
+                updateTransform();
             }
         }
 
-        function addApp(app) {
-            // Avoid duplicates
-            if (!discoveredApps.some(a => a.url === app.url)) {
-                discoveredApps.push(app);
-                renderApps();
-            }
+        // --- SVG PAN & ZOOM LOGIC ---
+        const svgContainer = document.getElementById('graph-container');
+        const graphGroup = document.getElementById('graph_group');
+        
+        let transform = { x: 0, y: 0, scale: 1 };
+        let isPanning = false;
+        let startPoint = { x: 0, y: 0 };
+
+        function updateTransform() {
+            graphGroup.setAttribute('transform', `translate(${transform.x}, ${transform.y}) scale(${transform.scale})`);
         }
 
-        function createAppCard(app) {
-            return `
-                <div class="glass-card rounded-2xl p-6 flex flex-col h-full group">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="${app.bgColor} ${app.color} p-3 rounded-xl">
-                            <i data-lucide="${app.icon}" class="w-6 h-6"></i>
-                        </div>
-                        <span class="category-badge px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">
-                            ${app.category}
-                        </span>
-                    </div>
-                    <h3 class="text-xl font-bold text-slate-900 mb-2 group-hover:text-blue-600 transition-colors capitalize">
-                        ${app.title}
-                    </h3>
-                    <p class="text-slate-500 text-sm leading-relaxed mb-6 flex-grow">
-                        ${app.description}
-                    </p>
-                    <div class="flex items-center gap-3">
-                        <a href="${app.url}" target="_blank" class="flex-grow inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-blue-600 transition-all">
-                            Launch <i data-lucide="external-link" class="w-4 h-4"></i>
-                        </a>
-                        <button onclick="copyToClipboard('${app.url}')" class="p-2.5 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-colors">
-                            <i data-lucide="copy" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-        }
+        svgContainer.addEventListener('mousedown', (e) => {
+            isPanning = true;
+            startPoint = { x: e.clientX - transform.x, y: e.clientY - transform.y };
+        });
 
-        function renderApps() {
-            const filter = document.getElementById('searchInput').value.toLowerCase();
-            const grid = document.getElementById('appGrid');
+        svgContainer.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            e.preventDefault();
+            transform.x = e.clientX - startPoint.x;
+            transform.y = e.clientY - startPoint.y;
+            updateTransform();
+        });
 
-            const filtered = discoveredApps.filter(app =>
-                app.title.toLowerCase().includes(filter) ||
-                app.category.toLowerCase().includes(filter)
-            );
+        svgContainer.addEventListener('mouseup', () => isPanning = false);
+        svgContainer.addEventListener('mouseleave', () => isPanning = false);
 
-            grid.innerHTML = filtered.map(app => createAppCard(app)).join('');
-            lucide.createIcons();
-        }
+        svgContainer.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomSensitivity = 0.001;
+            const delta = -e.deltaY * zoomSensitivity;
+            const newScale = Math.max(0.1, Math.min(transform.scale * (1 + delta), 5));
+            
+            // Zoom toward mouse pointer
+            const rect = svgContainer.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
 
-        function copyToClipboard(text) {
-            const el = document.createElement('textarea');
-            el.value = text;
-            document.body.appendChild(el);
-            el.select();
-            document.execCommand('copy');
-            document.body.removeChild(el);
-        }
+            transform.x = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
+            transform.y = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
+            transform.scale = newScale;
+            updateTransform();
+        });
 
-        document.getElementById('searchInput').addEventListener('input', renderApps);
-        window.addEventListener('DOMContentLoaded', () => lucide.createIcons());
+        // Zoom Controls
+        document.getElementById('btn-zoom-in').addEventListener('click', () => {
+            transform.scale *= 1.2;
+            updateTransform();
+        });
+        document.getElementById('btn-zoom-out').addEventListener('click', () => {
+            transform.scale *= 0.8;
+            updateTransform();
+        });
+        document.getElementById('btn-zoom-reset').addEventListener('click', () => {
+            // Find center again ideally, but for now just reset scale to 1
+            transform.scale = 1;
+            updateTransform();
+        });
+
     </script>
 </body>
-
 </html>
